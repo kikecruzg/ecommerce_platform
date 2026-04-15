@@ -7,6 +7,11 @@ class OrdersController < ApplicationController
     # Geocode the shipping address (Mock)
     location = GeocodingService.geocode(address)
 
+    # Find the closest warehouse that can fulfill all items
+    warehouse = WarehouseSelectionService.find(items: items, lat: location.lat, lng: location.lng)
+    return render json: { error: "No warehouse can fulfill this order" }, status: :unprocessable_entity if warehouse.nil?
+
+    # Load products
     product_ids = items.map { |i| i[:product_id] }
     products    = Product.where(id: product_ids).index_by(&:id)
 
@@ -17,6 +22,7 @@ class OrdersController < ApplicationController
       product.price * item[:quantity].to_i
     end
 
+    # Charge the customer
     payment = PaymentService.charge(
       credit_card_number: customer.credit_card_number,
       amount: total,
@@ -25,10 +31,11 @@ class OrdersController < ApplicationController
 
     return render json: { error: "Payment failed" }, status: :payment_required unless payment.success
 
-    # Persist the order inside a transaction
+    # Persist the order and decrement inventory inside a transaction
     order = ActiveRecord::Base.transaction do
       order = Order.create!(
         customer: customer,
+        warehouse: warehouse,
         shipping_address: address,
         shipping_lat: location.lat,
         shipping_lng: location.lng,
@@ -38,11 +45,18 @@ class OrdersController < ApplicationController
       )
 
       items.each do |item|
+        product        = products[item[:product_id].to_i]
+        quantity       = item[:quantity].to_i
+
         order.order_items.create!(
-          product: products[item[:product_id].to_i],
-          quantity: item[:quantity].to_i,
-          unit_price: products[item[:product_id].to_i].price
+          product: product,
+          quantity: quantity,
+          unit_price: product.price
         )
+
+        # Decrement inventory with pessimistic lock to prevent race conditions
+        inventory = WarehouseInventory.lock.find_by!(warehouse: warehouse, product: product)
+        inventory.decrement!(:quantity, quantity)
       end
 
       order
@@ -63,6 +77,7 @@ class OrdersController < ApplicationController
     {
       id: order.id,
       status: order.status,
+      warehouse_id: order.warehouse_id,
       total_amount: order.total_amount,
       payment_id: order.payment_id,
       shipping_address: order.shipping_address,
