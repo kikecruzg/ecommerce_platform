@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_15_170342) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_15_194718) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -45,8 +45,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_15_170342) do
     t.string "status", default: "pending", null: false
     t.decimal "total_amount", null: false
     t.datetime "updated_at", null: false
+    t.bigint "warehouse_id"
     t.index ["customer_id"], name: "index_orders_on_customer_id"
     t.index ["status"], name: "index_orders_on_status"
+    t.index ["warehouse_id"], name: "index_orders_on_warehouse_id"
   end
 
   create_table "products", force: :cascade do |t|
@@ -58,7 +60,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_15_170342) do
     t.index ["sku"], name: "index_products_on_sku", unique: true
   end
 
+  create_table "warehouse_inventories", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "product_id", null: false
+    t.integer "quantity", default: 0, null: false
+    t.datetime "updated_at", null: false
+    t.bigint "warehouse_id", null: false
+    t.index ["product_id"], name: "index_warehouse_inventories_on_product_id"
+    t.index ["warehouse_id", "product_id"], name: "index_warehouse_inventories_on_warehouse_id_and_product_id", unique: true
+    t.index ["warehouse_id"], name: "index_warehouse_inventories_on_warehouse_id"
+  end
+
+  create_table "warehouses", force: :cascade do |t|
+    t.string "address", null: false
+    t.datetime "created_at", null: false
+    t.decimal "latitude", precision: 10, scale: 6, null: false
+    t.decimal "longitude", precision: 10, scale: 6, null: false
+    t.string "name", null: false
+    t.datetime "updated_at", null: false
+  end
+
   add_foreign_key "order_items", "orders"
   add_foreign_key "order_items", "products"
   add_foreign_key "orders", "customers"
+  add_foreign_key "orders", "warehouses"
+  add_foreign_key "warehouse_inventories", "products"
+  add_foreign_key "warehouse_inventories", "warehouses"
 end
